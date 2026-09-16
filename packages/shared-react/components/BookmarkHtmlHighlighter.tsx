@@ -2,6 +2,7 @@ import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -200,6 +201,9 @@ const BookmarkHTMLHighlighter = forwardRef<
   ref,
 ) {
   const contentRef = useRef<HTMLDivElement>(null);
+  // React compares this prop by identity. A fresh object rewrites innerHTML on
+  // every menu render, invalidating manual annotations and native selections.
+  const contentHTML = useMemo(() => ({ __html: htmlContent }), [htmlContent]);
   const onContentReadyRef = useRef(onContentReady);
   onContentReadyRef.current = onContentReady;
 
@@ -305,7 +309,18 @@ const BookmarkHTMLHighlighter = forwardRef<
       y: isMobile ? rect.bottom : rect.top,
     });
     setSelectedHighlight(null);
-    setPendingHighlight(createHighlightFromRange(range, "yellow"));
+    const next = createHighlightFromRange(range, "yellow");
+    // Native selection notifications can repeat after pointerup or a server
+    // annotation refresh. Preserve edits while the selected range is unchanged.
+    setPendingHighlight((current) =>
+      current &&
+      next &&
+      current.startOffset === next.startOffset &&
+      current.endOffset === next.endOffset &&
+      current.text === next.text
+        ? current
+        : next,
+    );
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -467,7 +482,7 @@ const BookmarkHTMLHighlighter = forwardRef<
       <div
         role="presentation"
         ref={contentRef}
-        dangerouslySetInnerHTML={{ __html: htmlContent }}
+        dangerouslySetInnerHTML={contentHTML}
         onPointerUp={handlePointerUp}
         className={cn(
           "prose prose-neutral max-w-none break-words dark:prose-invert [&_code]:break-all [&_img]:h-auto [&_img]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto",
