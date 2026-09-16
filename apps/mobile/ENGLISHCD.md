@@ -74,6 +74,7 @@ pnpm --filter @karakeep/mobile typecheck
 
 - 每次 push `feature/englishcd-mobile`，触发 [EnglishCD Android APK](../../.github/workflows/mobile-apk.yml)。同分支有新提交时取消旧构建，避免重复消耗。
 - 安装锁定依赖，执行移动端 TypeScript 和 EnglishCD 单元测试，通过 Expo prebuild + Gradle `assembleRelease` 生成 APK；不调用 EAS、不需要 Expo/Sentry Token、不跑端到端。
+- SDK 初始化显式指定 `packages: platform-tools`，覆盖锁定版 setup-android 中包含旧 `tools` 包的默认值；命令行工具由 Action 安装，SDK 36、Build Tools、NDK 和 CMake 继续由后续步骤安装。首次运行在默认 `tools` 包不存在处失败，不是 App 代码编译错误。
 - 包名 `app.hoarder.hoardermobile.dev`，名称 `Karakeep (Dev)`，仅 ARM64 手机。虽然使用 development 名称，构建类型是 Release，内置 JS/阅读器资源，不需要 Expo Go 或 Metro。
 - 使用 Expo 模板附带的公开测试签名，仅供个人测试，不用于商店发布或可信正式分发。与官方版并装，首次安装需重新登录 Karakeep、配置 EnglishCD。后续模板签名未变时可以覆盖更新；将来更换签名需迁移或重装，卸载会清掉本地配置。
 - 构建成功后打开仓库 **Actions → EnglishCD Android APK → 对应运行 → Artifacts**，下载 `karakeep-englishcd-arm64-运行序号`，解压安装 `app-release.apk`。产物保留 14 天，下载需登录 GitHub。
