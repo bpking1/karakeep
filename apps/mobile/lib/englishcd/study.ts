@@ -1,7 +1,7 @@
 import {
-  MAX_READING_DOCUMENT_BYTES,
   snapshotInText,
   utf8ByteLength,
+  validateArticle,
   wordsIn,
 } from "./reading";
 import type {
@@ -11,7 +11,6 @@ import type {
   WordState,
 } from "./types";
 
-export const ARTICLE_LIMIT = MAX_READING_DOCUMENT_BYTES;
 export const ROUND_SIZE = 20;
 export type StudyState = "all" | "unmastered" | WordState;
 export interface Occurrence {
@@ -23,12 +22,6 @@ export interface StudyInventory {
   occurrences: Map<string, Occurrence>;
 }
 export type StudyWord = WordInfo & Occurrence;
-
-export function validateArticle(text: string) {
-  if (!text.trim()) throw new Error("当前文章没有可用正文");
-  if (utf8ByteLength(text) > ARTICLE_LIMIT)
-    throw new Error("正文超过 2 MiB，未截断，请选择较短文章");
-}
 
 // Adapted from EnglishCD extension study-inventory/shared study-words. This is a
 // complete local inventory, independent of the DOM highlighter's scan limits.

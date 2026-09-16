@@ -399,6 +399,18 @@ export default function BottomActions({ bookmark }: BottomActionsProps) {
             imageColor: menuIconColor,
             attributes: { disabled: !englishCD.ready },
           },
+          {
+            id: "englishcd-import",
+            title: englishCD.enabled
+              ? "导入英语"
+              : "导入英语（先配置 EnglishCD）",
+            image: Platform.select({
+              ios: "square.and.arrow.down",
+              default: undefined,
+            }),
+            imageColor: menuIconColor,
+            attributes: { disabled: !englishCD.ready },
+          },
         ]
       : []),
     ...(menuActions.length > 0
@@ -426,6 +438,10 @@ export default function BottomActions({ bookmark }: BottomActionsProps) {
   const handleMenuAction = (event: string) => {
     if (event === "englishcd-study") {
       englishCD?.showStudy();
+      return;
+    }
+    if (event === "englishcd-import") {
+      englishCD?.showImport();
       return;
     }
     if (event === "edit-toolbar") {

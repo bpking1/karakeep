@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { AppState } from "react-native";
 import WordCard from "@/components/englishcd/WordCard";
 import { StudyPanel } from "@/components/englishcd/StudyPanel";
+import { ImportPanel } from "@/components/englishcd/ImportPanel";
 import { EnglishCDClient } from "@/lib/englishcd/client";
 import { useEnglishCDSettings } from "@/lib/englishcd/settings";
 import { selectionError } from "@/lib/englishcd/word-card";
@@ -38,6 +39,7 @@ interface ReaderSessionValue {
   supported: boolean;
   ready: boolean;
   showStudy: () => void;
+  showImport: () => void;
 }
 
 const Context = createContext<ReaderSessionValue | null>(null);
@@ -68,7 +70,7 @@ export function EnglishCDReaderSession({
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [document, setDocument] = useState<ReadingDocument>();
-  const [studying, setStudying] = useState(false);
+  const [panel, setPanel] = useState<"study" | "import">();
   const [card, setCard] = useState<{
     id: number;
     selection: ReadingSelection;
@@ -90,7 +92,7 @@ export function EnglishCDReaderSession({
   useEffect(() => {
     setCard(undefined);
     setDocument(undefined);
-    setStudying(false);
+    setPanel(undefined);
     setError("");
     if (!enabled) {
       setConnection(undefined);
@@ -173,7 +175,7 @@ export function EnglishCDReaderSession({
 
   useEffect(() => {
     setCard(undefined);
-    setStudying(false);
+    setPanel(undefined);
   }, [document?.text]);
 
   return (
@@ -193,21 +195,31 @@ export function EnglishCDReaderSession({
         supported,
         ready: !!client && !!document?.text.trim(),
         showStudy: () => {
-          if (client && document) setStudying(true);
+          if (client && document) setPanel("study");
+        },
+        showImport: () => {
+          if (client && document) setPanel("import");
         },
       }}
     >
       {children}
-      {client && document && studying && (
+      {client && document && panel === "study" && (
         <StudyPanel
           client={client}
           document={document}
           revision={revision}
-          onClose={() => setStudying(false)}
+          onClose={() => setPanel(undefined)}
           onChanged={refresh}
           onOpenWord={(selection) => {
             void open(selection, "lookup");
           }}
+        />
+      )}
+      {client && document && panel === "import" && (
+        <ImportPanel
+          client={client}
+          document={document}
+          onClose={() => setPanel(undefined)}
         />
       )}
       {client && card && (

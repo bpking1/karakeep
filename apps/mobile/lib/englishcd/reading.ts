@@ -14,6 +14,12 @@ export function utf8ByteLength(text: string) {
   return bytes;
 }
 
+export function validateArticle(text: string) {
+  if (!text.trim()) throw new Error("当前文章没有可用正文");
+  if (utf8ByteLength(text) > MAX_READING_DOCUMENT_BYTES)
+    throw new Error("正文超过 2 MiB，未截断，请选择较短文章");
+}
+
 export function wordsIn(text: string) {
   return [...text.matchAll(/[A-Za-z]+(?:['’ʼ-][A-Za-z]+)*/g)].map((match) => ({
     word: match[0],

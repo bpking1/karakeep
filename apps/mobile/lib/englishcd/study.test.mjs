@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { load } from "./test-support.mjs";
 const study = load("study");
+const { validateArticle } = load("reading");
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const document = (text) => ({
   documentId: "bookmark-1",
@@ -125,7 +126,7 @@ test("practice pauses at 20 words and ends the final partial round without write
 
 test("article limits fail explicitly rather than silently truncating", () => {
   assert.throws(() => study.createInventory(document(" ")), /正文/);
-  assert.throws(() => study.validateArticle("中".repeat(700000)), /2 MiB/);
+  assert.throws(() => validateArticle("中".repeat(700000)), /2 MiB/);
   assert.throws(
     () => study.createInventory(document("a ".repeat(100001))),
     /100000/,
