@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { AppState } from "react-native";
+import { useFocusEffect } from "expo-router";
 import WordCard from "@/components/englishcd/WordCard";
 import { StudyPanel } from "@/components/englishcd/StudyPanel";
 import { ImportPanel } from "@/components/englishcd/ImportPanel";
@@ -25,6 +26,7 @@ import type {
 type ReadingAction = "lookup" | "translate" | "capture";
 
 interface ReaderSessionValue {
+  initializing: boolean;
   enabled: boolean;
   tag: string;
   revision: number;
@@ -112,6 +114,12 @@ export function EnglishCDReaderSession({
     setError("");
   }, [client]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (client) refresh();
+    }, [client, refresh]),
+  );
+
   useEffect(() => {
     if (!client) return;
     const subscription = AppState.addEventListener("change", (state) => {
@@ -181,6 +189,7 @@ export function EnglishCDReaderSession({
   return (
     <Context.Provider
       value={{
+        initializing: supported && (isLoading || (settings.enabled && !client)),
         enabled: !!client,
         tag: settings.tag,
         revision,

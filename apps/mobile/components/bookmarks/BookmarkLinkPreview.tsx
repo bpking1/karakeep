@@ -183,7 +183,10 @@ export function BookmarkLinkReaderPreview({
     setViewingImage(src);
   }, []);
 
-  if (!displayedBookmarkWithContent) {
+  // Expo DOM freezes initialProps at WebView mount. With a cached article the
+  // view can mount before the reader's connection effect finishes, losing the
+  // enabled update while the WebView bridge is still starting.
+  if (!displayedBookmarkWithContent || englishCD?.initializing) {
     return <QueryPageState error={error} onRetry={refetch} />;
   }
 

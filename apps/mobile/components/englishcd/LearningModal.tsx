@@ -13,10 +13,12 @@ export function LearningModal({
   title,
   onClose,
   children,
+  fill = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  fill?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -49,7 +51,11 @@ export function LearningModal({
         />
         <View
           className="w-[94%] max-w-xl gap-3 rounded-3xl bg-background p-4"
-          style={{ maxHeight: "94%", flexShrink: 1 }}
+          style={{
+            maxHeight: "94%",
+            flexShrink: 1,
+            ...(fill ? { height: "94%" } : {}),
+          }}
         >
           <Text className="text-xl font-semibold">{title}</Text>
           {children}

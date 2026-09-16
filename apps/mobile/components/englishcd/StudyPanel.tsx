@@ -154,7 +154,7 @@ export function StudyPanel({
   };
 
   return (
-    <LearningModal title="本文词汇学习" onClose={onClose}>
+    <LearningModal title="本文词汇学习" onClose={onClose} fill>
       {error && (
         <View className="gap-2">
           <Text className="text-sm text-destructive">{error}</Text>
@@ -254,97 +254,104 @@ export function StudyPanel({
         </ScrollView>
       ) : (
         <>
-          <Text className="text-sm text-muted-foreground">
-            共 {words.length} 词 · 已掌握 {known} · 未掌握{" "}
-            {words.length - known}
-          </Text>
-          <Input
-            placeholder="搜索词语"
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
-            contentContainerStyle={{ gap: 6 }}
-          >
-            {[
-              { value: "unmastered" as StudyState, label: "未掌握（含忽略）" },
-              { value: "all" as StudyState, label: "全部" },
-              ...states,
-            ].map((item) => (
-              <Button
-                key={item.value}
-                size="sm"
-                variant={state === item.value ? "tonal" : "plain"}
-                onPress={() => setState(item.value)}
-              >
-                <Text>{item.label}</Text>
-              </Button>
-            ))}
-          </ScrollView>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
-            contentContainerStyle={{ gap: 6 }}
-          >
-            <Button
-              size="sm"
-              variant={!tag ? "tonal" : "plain"}
-              onPress={() => setTag("")}
-            >
-              <Text>全部标签</Text>
-            </Button>
-            {tags.map(([label, count]) => (
-              <Button
-                key={label}
-                size="sm"
-                variant={tag === label ? "tonal" : "plain"}
-                onPress={() => setTag(label)}
-              >
-                <Text>
-                  {tagLabel(label)} {count}
-                </Text>
-              </Button>
-            ))}
-          </ScrollView>
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm">
-              筛选 {filtered.length} · 已选 {selected.size}
-            </Text>
-            <Button
-              size="sm"
-              variant="plain"
-              disabled={loading || writing}
-              onPress={() =>
-                setSelected((previous) =>
-                  toggleSelection(
-                    previous,
-                    filtered.map((word) => word.termKey),
-                  ),
-                )
-              }
-            >
-              <Text>全选 / 取消当前</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="plain"
-              onPress={() => setSelected(new Set())}
-            >
-              <Text>清空</Text>
-            </Button>
-          </View>
-          {loading && <ActivityIndicator />}
           <FlatList
             data={filtered}
             keyExtractor={(word) => word.termKey}
-            style={{ flexShrink: 1, minHeight: 100 }}
+            style={{ flex: 1, minHeight: 0 }}
             extraData={selected}
             keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              <View className="gap-3 pb-3" style={{ flexShrink: 0 }}>
+                <Text className="text-sm text-muted-foreground">
+                  共 {words.length} 词 · 已掌握 {known} · 未掌握{" "}
+                  {words.length - known}
+                </Text>
+                <Input
+                  placeholder="搜索词语"
+                  value={query}
+                  onChangeText={setQuery}
+                  autoCapitalize="none"
+                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ flexGrow: 0, flexShrink: 0 }}
+                  contentContainerStyle={{ gap: 6 }}
+                >
+                  {[
+                    {
+                      value: "unmastered" as StudyState,
+                      label: "未掌握（含忽略）",
+                    },
+                    { value: "all" as StudyState, label: "全部" },
+                    ...states,
+                  ].map((item) => (
+                    <Button
+                      key={item.value}
+                      size="sm"
+                      variant={state === item.value ? "tonal" : "plain"}
+                      onPress={() => setState(item.value)}
+                    >
+                      <Text>{item.label}</Text>
+                    </Button>
+                  ))}
+                </ScrollView>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ flexGrow: 0, flexShrink: 0 }}
+                  contentContainerStyle={{ gap: 6 }}
+                >
+                  <Button
+                    size="sm"
+                    variant={!tag ? "tonal" : "plain"}
+                    onPress={() => setTag("")}
+                  >
+                    <Text>全部标签</Text>
+                  </Button>
+                  {tags.map(([label, count]) => (
+                    <Button
+                      key={label}
+                      size="sm"
+                      variant={tag === label ? "tonal" : "plain"}
+                      onPress={() => setTag(label)}
+                    >
+                      <Text>
+                        {tagLabel(label)} {count}
+                      </Text>
+                    </Button>
+                  ))}
+                </ScrollView>
+                <View className="flex-row flex-wrap items-center justify-between gap-1">
+                  <Text className="text-sm">
+                    筛选 {filtered.length} · 已选 {selected.size}
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="plain"
+                    disabled={loading || writing}
+                    onPress={() =>
+                      setSelected((previous) =>
+                        toggleSelection(
+                          previous,
+                          filtered.map((word) => word.termKey),
+                        ),
+                      )
+                    }
+                  >
+                    <Text>全选 / 取消当前</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="plain"
+                    onPress={() => setSelected(new Set())}
+                  >
+                    <Text>清空</Text>
+                  </Button>
+                </View>
+                {loading && <ActivityIndicator />}
+              </View>
+            }
             ListEmptyComponent={
               !loading ? (
                 <Text className="py-4 text-muted-foreground">
