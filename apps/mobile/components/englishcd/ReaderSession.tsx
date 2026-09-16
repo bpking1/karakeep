@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { AppState } from "react-native";
 import WordCard from "@/components/englishcd/WordCard";
+import { StudyPanel } from "@/components/englishcd/StudyPanel";
 import { EnglishCDClient } from "@/lib/englishcd/client";
 import { useEnglishCDSettings } from "@/lib/englishcd/settings";
 import { selectionError } from "@/lib/englishcd/word-card";
@@ -34,6 +35,9 @@ interface ReaderSessionValue {
   publish: (document: { documentId: string; text: string }) => Promise<void>;
   reportError: (message: string) => Promise<void>;
   refresh: () => void;
+  supported: boolean;
+  ready: boolean;
+  showStudy: () => void;
 }
 
 const Context = createContext<ReaderSessionValue | null>(null);
@@ -64,6 +68,7 @@ export function EnglishCDReaderSession({
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
   const [document, setDocument] = useState<ReadingDocument>();
+  const [studying, setStudying] = useState(false);
   const [card, setCard] = useState<{
     id: number;
     selection: ReadingSelection;
@@ -83,6 +88,10 @@ export function EnglishCDReaderSession({
       : undefined;
 
   useEffect(() => {
+    setCard(undefined);
+    setDocument(undefined);
+    setStudying(false);
+    setError("");
     if (!enabled) {
       setConnection(undefined);
       return;
@@ -93,13 +102,7 @@ export function EnglishCDReaderSession({
     });
     setConnection({ client: next, url: settings.url, apiKey: settings.apiKey });
     return () => next.close();
-  }, [enabled, settings.url, settings.apiKey]);
-
-  useEffect(() => {
-    setCard(undefined);
-    setDocument(undefined);
-    setError("");
-  }, [client, documentId]);
+  }, [enabled, settings.url, settings.apiKey, documentId]);
 
   const refresh = useCallback(() => {
     client?.invalidate();
@@ -170,6 +173,7 @@ export function EnglishCDReaderSession({
 
   useEffect(() => {
     setCard(undefined);
+    setStudying(false);
   }, [document?.text]);
 
   return (
@@ -186,9 +190,26 @@ export function EnglishCDReaderSession({
         publish,
         reportError,
         refresh,
+        supported,
+        ready: !!client && !!document?.text.trim(),
+        showStudy: () => {
+          if (client && document) setStudying(true);
+        },
       }}
     >
       {children}
+      {client && document && studying && (
+        <StudyPanel
+          client={client}
+          document={document}
+          revision={revision}
+          onClose={() => setStudying(false)}
+          onChanged={refresh}
+          onOpenWord={(selection) => {
+            void open(selection, "lookup");
+          }}
+        />
+      )}
       {client && card && (
         <WordCard
           key={card.id}

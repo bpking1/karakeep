@@ -7,6 +7,7 @@ import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { TailwindResolver } from "@/components/TailwindResolver";
+import { useEnglishCDReader } from "@/components/englishcd/ReaderSession";
 import { useToast } from "@/components/ui/Toast";
 import { shouldUseGlassPill } from "@/lib/ios";
 import useAppSettings from "@/lib/settings";
@@ -355,6 +356,7 @@ interface BottomActionsProps {
 }
 
 export default function BottomActions({ bookmark }: BottomActionsProps) {
+  const englishCD = useEnglishCDReader();
   const { barActions, overflowActions, allActions } =
     useToolbarActions(bookmark);
   const insets = useSafeAreaInsets();
@@ -383,6 +385,22 @@ export default function BottomActions({ bookmark }: BottomActionsProps) {
 
   // Add separator + "Edit Toolbar..." at the bottom
   const menuActionsWithEdit: MenuAction[] = [
+    ...(englishCD?.supported
+      ? [
+          {
+            id: "englishcd-study",
+            title: englishCD.enabled
+              ? "本文词汇学习"
+              : "本文词汇学习（先配置 EnglishCD）",
+            image: Platform.select({
+              ios: "character.book.closed",
+              default: undefined,
+            }),
+            imageColor: menuIconColor,
+            attributes: { disabled: !englishCD.ready },
+          },
+        ]
+      : []),
     ...(menuActions.length > 0
       ? [
           {
@@ -406,6 +424,10 @@ export default function BottomActions({ bookmark }: BottomActionsProps) {
   ];
 
   const handleMenuAction = (event: string) => {
+    if (event === "englishcd-study") {
+      englishCD?.showStudy();
+      return;
+    }
     if (event === "edit-toolbar") {
       router.push("/dashboard/settings/toolbar-settings");
       return;
