@@ -17,7 +17,8 @@
     "format:fix": "oxfmt --ignore-path=../../.gitignore --ignore-path=./.gitignore .",
     "lint": "oxlint --ignore-path=../../.gitignore .",
     "lint:fix": "oxlint --ignore-path=../../.gitignore . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:englishcd": "node --import tsx --test lib/englishcd/*.test.*"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.1.2",
@@ -96,7 +97,9 @@
     "@karakeep/tsconfig": "workspace:^0.1.0",
     "@types/react": "19.2.15",
     "ajv": "latest",
+    "happy-dom": "20.3.9",
     "tailwindcss": "^3.4.1",
+    "tsx": "4.20.3",
     "typescript": "^5.9"
   },
   "expo": {

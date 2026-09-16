@@ -133,6 +133,11 @@ export default function Settings() {
         />
         <SettingsSeparator />
         <SettingsNavigationRow
+          label="EnglishCD 英语学习"
+          onPress={() => router.push("/dashboard/settings/englishcd")}
+        />
+        <SettingsSeparator />
+        <SettingsNavigationRow
           isLoading={isLoading}
           label="Uploads"
           onPress={() => router.push("/dashboard/settings/uploads")}

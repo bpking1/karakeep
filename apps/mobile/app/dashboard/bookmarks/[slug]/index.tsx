@@ -9,6 +9,7 @@ import BookmarkLinkTypeSelector, {
 import BookmarkLinkView from "@/components/bookmarks/BookmarkLinkView";
 import BookmarkTextView from "@/components/bookmarks/BookmarkTextView";
 import BottomActions from "@/components/bookmarks/BottomActions";
+import { EnglishCDReaderSession } from "@/components/englishcd/ReaderSession";
 import QueryPageState from "@/components/QueryPageState";
 import { shouldUseGlassPill } from "@/lib/ios";
 import {
@@ -106,54 +107,73 @@ export default function BookmarkView() {
       break;
   }
   return (
-    <KeyboardAvoidingView
-      // BottomActions owns the safe-area inset. Adding it to this wrapper as
-      // well leaves a visible gap below the toolbar on Android and legacy iOS.
-      style={{ flex: 1 }}
-      behavior="height"
+    <EnglishCDReaderSession
+      key={`${slug}:${displayedBookmarkLinkType}`}
+      documentId={slug}
+      title={title ?? "Untitled"}
+      source={{
+        kind: "karakeep",
+        externalId: slug,
+        title: title ?? "Untitled",
+        url:
+          displayedBookmark.content.type === BookmarkTypes.LINK
+            ? displayedBookmark.content.url
+            : undefined,
+      }}
+      supported={
+        displayedBookmark.content.type === BookmarkTypes.LINK &&
+        displayedBookmarkLinkType === "reader"
+      }
     >
-      {settings.keepScreenOnWhileReading && <KeepScreenOn />}
-      <Stack.Screen
-        options={{
-          headerTitle: title ?? "",
-          headerBackTitle: "Back",
-          headerTransparent: false,
-          headerShown: true,
-          headerStyle: {
-            backgroundColor: isDark ? "#000" : "#fff",
-          },
-          headerTintColor: isDark ? "#fff" : "#000",
-          headerRight: () =>
-            displayedBookmark.content.type === BookmarkTypes.LINK ? (
-              <View
-                className={`flex-row items-center gap-3${shouldUseGlassPill ? " px-2" : ""}`}
-              >
-                {displayedBookmarkLinkType === "reader" && (
-                  <Pressable
-                    onPress={() =>
-                      router.push("/dashboard/settings/reader-settings")
-                    }
-                  >
-                    <Settings size={20} color={isDark ? "#fff" : "#000"} />
-                  </Pressable>
-                )}
-                <BookmarkLinkTypeSelector
-                  type={displayedBookmarkLinkType}
-                  onChange={(type) => setBookmarkLinkType(type)}
-                  bookmark={displayedBookmark}
-                />
-              </View>
-            ) : undefined,
-        }}
-      />
-      {comp}
-      {shouldUseGlassPill ? (
-        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}>
+      <KeyboardAvoidingView
+        // BottomActions owns the safe-area inset. Adding it to this wrapper as
+        // well leaves a visible gap below the toolbar on Android and legacy iOS.
+        style={{ flex: 1 }}
+        behavior="height"
+      >
+        {settings.keepScreenOnWhileReading && <KeepScreenOn />}
+        <Stack.Screen
+          options={{
+            headerTitle: title ?? "",
+            headerBackTitle: "Back",
+            headerTransparent: false,
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: isDark ? "#000" : "#fff",
+            },
+            headerTintColor: isDark ? "#fff" : "#000",
+            headerRight: () =>
+              displayedBookmark.content.type === BookmarkTypes.LINK ? (
+                <View
+                  className={`flex-row items-center gap-3${shouldUseGlassPill ? " px-2" : ""}`}
+                >
+                  {displayedBookmarkLinkType === "reader" && (
+                    <Pressable
+                      onPress={() =>
+                        router.push("/dashboard/settings/reader-settings")
+                      }
+                    >
+                      <Settings size={20} color={isDark ? "#fff" : "#000"} />
+                    </Pressable>
+                  )}
+                  <BookmarkLinkTypeSelector
+                    type={displayedBookmarkLinkType}
+                    onChange={(type) => setBookmarkLinkType(type)}
+                    bookmark={displayedBookmark}
+                  />
+                </View>
+              ) : undefined,
+          }}
+        />
+        {comp}
+        {shouldUseGlassPill ? (
+          <View style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}>
+            <BottomActions bookmark={displayedBookmark} />
+          </View>
+        ) : (
           <BottomActions bookmark={displayedBookmark} />
-        </View>
-      ) : (
-        <BottomActions bookmark={displayedBookmark} />
-      )}
-    </KeyboardAvoidingView>
+        )}
+      </KeyboardAvoidingView>
+    </EnglishCDReaderSession>
   );
 }

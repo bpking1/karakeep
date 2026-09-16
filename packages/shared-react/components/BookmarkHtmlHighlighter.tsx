@@ -25,6 +25,9 @@ interface HighlightFormProps {
   onClose: () => void;
   onSave: (color: ZHighlightColor, note: string | null) => void;
   onDelete?: () => void;
+  onDismiss?: () => void;
+  selectionActions?: readonly SelectionAction[];
+  onSelectionAction?: (id: string) => void;
   isMobile: boolean;
 }
 
@@ -34,6 +37,9 @@ const HighlightForm: React.FC<HighlightFormProps> = ({
   onClose,
   onSave,
   onDelete,
+  onDismiss,
+  selectionActions,
+  onSelectionAction,
   isMobile,
 }) => {
   const [selectedColor, setSelectedColor] = useState<ZHighlightColor>(
@@ -56,7 +62,7 @@ const HighlightForm: React.FC<HighlightFormProps> = ({
       open={position !== null}
       onOpenChange={(val) => {
         if (!val) {
-          onClose();
+          (onDismiss ?? onClose)();
         }
       }}
     >
@@ -72,6 +78,20 @@ const HighlightForm: React.FC<HighlightFormProps> = ({
         className="w-80 space-y-3 p-3"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
+        {!!selectionActions?.length && selectedHighlight?.text && (
+          <div className="flex flex-wrap gap-2" aria-label="Selection actions">
+            {selectionActions.map((action) => (
+              <Button
+                key={action.id}
+                size="sm"
+                variant="outline"
+                onClick={() => onSelectionAction?.(action.id)}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        )}
         <div>
           <label className="mb-2 block text-sm font-medium">Color</label>
           <div className="flex items-center gap-1">
@@ -136,6 +156,16 @@ export interface Highlight {
   note?: string | null;
 }
 
+export interface SelectionAction {
+  id: string;
+  label: string;
+}
+export type HighlightSelection = Pick<
+  Highlight,
+  "text" | "startOffset" | "endOffset"
+>;
+const EMPTY_HIGHLIGHTS: Highlight[] = [];
+
 interface HTMLHighlighterProps {
   htmlContent: string;
   style?: React.CSSProperties;
@@ -145,6 +175,9 @@ interface HTMLHighlighterProps {
   onHighlight?: (highlight: Highlight) => void;
   onUpdateHighlight?: (highlight: Highlight) => void;
   onDeleteHighlight?: (highlight: Highlight) => void;
+  selectionActions?: readonly SelectionAction[];
+  onSelectionAction?: (action: string, selection: HighlightSelection) => void;
+  onContentReady?: () => void;
 }
 
 const BookmarkHTMLHighlighter = forwardRef<
@@ -155,15 +188,20 @@ const BookmarkHTMLHighlighter = forwardRef<
     htmlContent,
     className,
     style,
-    highlights = [],
+    highlights = EMPTY_HIGHLIGHTS,
     readOnly = false,
     onHighlight,
     onUpdateHighlight,
     onDeleteHighlight,
+    selectionActions,
+    onSelectionAction,
+    onContentReady,
   },
   ref,
 ) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const onContentReadyRef = useRef(onContentReady);
+  onContentReadyRef.current = onContentReady;
 
   // Expose the content div ref to parent components
   useImperativeHandle(ref, () => contentRef.current!, []);
@@ -187,6 +225,16 @@ const BookmarkHTMLHighlighter = forwardRef<
   // Apply existing highlights when component mounts or highlights change
   useEffect(() => {
     if (!contentRef.current) return;
+    const selection = window.getSelection();
+    const selectedRange =
+      selection && !selection.isCollapsed && selection.rangeCount === 1
+        ? selection.getRangeAt(0)
+        : null;
+    const preserved =
+      selectedRange &&
+      contentRef.current.contains(selectedRange.commonAncestorContainer)
+        ? createHighlightFromRange(selectedRange, "yellow")
+        : null;
 
     // Clear existing highlights first
     const existingHighlights = contentRef.current.querySelectorAll(
@@ -206,29 +254,59 @@ const BookmarkHTMLHighlighter = forwardRef<
     highlights.forEach((highlight) => {
       applyHighlightByOffset(highlight);
     });
-  });
+    if (preserved) {
+      const ranges = getRangeFromHighlight(preserved);
+      if (ranges?.length) {
+        const restored = document.createRange();
+        restored.setStart(ranges[0].node, ranges[0].start);
+        const last = ranges[ranges.length - 1];
+        restored.setEnd(last.node, last.end);
+        selection?.removeAllRanges();
+        selection?.addRange(restored);
+      }
+    }
+    onContentReadyRef.current?.();
+  }, [htmlContent, highlights]);
 
-  // Re-apply the selection when the pending range changes
   useEffect(() => {
-    if (!pendingHighlight) {
-      return;
-    }
-    if (!contentRef.current) {
-      return;
-    }
-    const ranges = getRangeFromHighlight(pendingHighlight);
-    if (!ranges) {
-      return;
-    }
-    const newRange = document.createRange();
-    newRange.setStart(ranges[0].node, ranges[0].start);
-    newRange.setEnd(
-      ranges[ranges.length - 1].node,
-      ranges[ranges.length - 1].end,
-    );
-    window.getSelection()?.removeAllRanges();
-    window.getSelection()?.addRange(newRange);
-  }, [pendingHighlight, contentRef]);
+    setMenuPosition(null);
+    setPendingHighlight(null);
+    setSelectedHighlight(null);
+  }, [htmlContent]);
+
+  // Native text handles may update selection without a DOM pointerup. Only
+  // observe them; never cancel long-press/context-menu events or rewrite ranges.
+  useEffect(() => {
+    if (!selectionActions?.length || readOnly) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount !== 1)
+          return;
+        const range = selection.getRangeAt(0);
+        if (!contentRef.current?.contains(range.commonAncestorContainer))
+          return;
+        showSelection(range);
+      }, 300);
+    };
+    document.addEventListener("selectionchange", changed);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("selectionchange", changed);
+    };
+  }, [selectionActions, readOnly]);
+
+  const showSelection = (range: Range) => {
+    const rect = range.getBoundingClientRect();
+    setMenuPosition({
+      x: rect.left + rect.width / 2,
+      y: isMobile ? rect.bottom : rect.top,
+    });
+    setSelectedHighlight(null);
+    setPendingHighlight(createHighlightFromRange(range, "yellow"));
+  };
 
   const handlePointerUp = (e: React.PointerEvent) => {
     if (readOnly) {
@@ -238,8 +316,10 @@ const BookmarkHTMLHighlighter = forwardRef<
     const selection = window.getSelection();
 
     // Check if we clicked on an existing highlight
-    const target = e.target as HTMLElement;
-    if (target.dataset.highlight) {
+    const target = (e.target as HTMLElement).closest<HTMLElement>(
+      "[data-highlight]",
+    );
+    if (target && (!selection || selection.isCollapsed)) {
       const highlightId = target.dataset.highlightId;
       if (highlightId && highlights) {
         const highlight = highlights.find((h) => h.id === highlightId);
@@ -266,15 +346,7 @@ const BookmarkHTMLHighlighter = forwardRef<
       return;
     }
 
-    // Position the menu based on device type
-    const rect = range.getBoundingClientRect();
-    setMenuPosition({
-      x: rect.left + rect.width / 2, // Center the menu horizontally
-      y: isMobile ? rect.bottom : rect.top, // Position below on mobile, above otherwise
-    });
-
-    // Store the highlight for later use
-    setPendingHighlight(createHighlightFromRange(range, "yellow"));
+    showSelection(range);
   };
 
   const handleSave = (color: ZHighlightColor, note: string | null) => {
@@ -290,11 +362,11 @@ const BookmarkHTMLHighlighter = forwardRef<
     closeForm();
   };
 
-  const closeForm = () => {
+  const closeForm = (clearSelection = true) => {
     setMenuPosition(null);
     setPendingHighlight(null);
     setSelectedHighlight(null);
-    window.getSelection()?.removeAllRanges();
+    if (clearSelection) window.getSelection()?.removeAllRanges();
   };
 
   const handleDelete = () => {
@@ -304,34 +376,22 @@ const BookmarkHTMLHighlighter = forwardRef<
     }
   };
 
-  const getTextNodeOffset = (node: Node): number => {
-    let offset = 0;
-    const walker = document.createTreeWalker(
-      contentRef.current!,
-      NodeFilter.SHOW_TEXT,
-      null,
-    );
-
-    while (walker.nextNode()) {
-      if (walker.currentNode === node) {
-        return offset;
-      }
-      offset += walker.currentNode.textContent?.length ?? 0;
-    }
-    return -1;
-  };
-
   const createHighlightFromRange = (
     range: Range,
     color: ZHighlightColor,
   ): Highlight | null => {
     if (!contentRef.current) return null;
 
-    const startOffset =
-      getTextNodeOffset(range.startContainer) + range.startOffset;
-    const endOffset = getTextNodeOffset(range.endContainer) + range.endOffset;
-
-    if (startOffset === -1 || endOffset === -1) return null;
+    if (
+      !contentRef.current.contains(range.startContainer) ||
+      !contentRef.current.contains(range.endContainer)
+    )
+      return null;
+    const before = document.createRange();
+    before.selectNodeContents(contentRef.current);
+    before.setEnd(range.startContainer, range.startOffset);
+    const startOffset = before.toString().length;
+    const endOffset = startOffset + range.toString().length;
 
     const highlight: Highlight = {
       id: "NOT_SET",
@@ -341,7 +401,6 @@ const BookmarkHTMLHighlighter = forwardRef<
       text: range.toString(),
     };
 
-    applyHighlightByOffset(highlight);
     return highlight;
   };
 
@@ -419,7 +478,22 @@ const BookmarkHTMLHighlighter = forwardRef<
       <HighlightForm
         position={menuPosition}
         selectedHighlight={selectedHighlight || pendingHighlight}
-        onClose={closeForm}
+        onClose={() => closeForm()}
+        onDismiss={() => closeForm(!selectionActions?.length)}
+        selectionActions={selectionActions}
+        onSelectionAction={(action) => {
+          const current = window.getSelection();
+          const range =
+            current && !current.isCollapsed && current.rangeCount === 1
+              ? current.getRangeAt(0)
+              : null;
+          const selection =
+            range && contentRef.current?.contains(range.commonAncestorContainer)
+              ? createHighlightFromRange(range, "yellow")
+              : (pendingHighlight ?? selectedHighlight);
+          if (selection) onSelectionAction?.(action, selection);
+          closeForm();
+        }}
         onSave={handleSave}
         onDelete={selectedHighlight ? handleDelete : undefined}
         isMobile={isMobile}

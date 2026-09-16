@@ -551,9 +551,15 @@ importers:
       ajv:
         specifier: latest
         version: 8.20.0
+      happy-dom:
+        specifier: 20.3.9
+        version: 20.3.9
       tailwindcss:
         specifier: ^3.4.1
         version: 3.4.1
+      tsx:
+        specifier: 4.20.3
+        version: 4.20.3
       typescript:
         specifier: ^5.9
         version: 5.9.3

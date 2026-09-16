@@ -7,7 +7,9 @@ import {
   WebViewSourceUri,
 } from "react-native-webview/lib/WebViewTypes";
 import * as WebBrowser from "expo-web-browser";
+import { useEnglishCDReader } from "@/components/englishcd/ReaderSession";
 import QueryPageState from "@/components/QueryPageState";
+import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { useAssetUrl } from "@/lib/hooks";
 import {
@@ -109,6 +111,7 @@ export function BookmarkLinkReaderPreview({
 }: {
   bookmark: ZBookmark;
 }) {
+  const englishCD = useEnglishCDReader();
   const { isDarkColorScheme: isDark } = useColorScheme();
   const { settings: readerSettings } = useReaderSettings();
   const { settings } = useAppSettings();
@@ -227,7 +230,26 @@ export function BookmarkLinkReaderPreview({
           </TouchableOpacity>
         </View>
       )}
+      {englishCD?.enabled && englishCD.error && (
+        <View className="flex-row items-center gap-2 border-b border-border px-4 py-2">
+          <Text className="flex-1 text-sm text-destructive">
+            EnglishCD：{englishCD.error}
+          </Text>
+          <Button variant="plain" size="sm" onPress={englishCD.refresh}>
+            <Text>重试高亮</Text>
+          </Button>
+        </View>
+      )}
       <BookmarkHtmlHighlighterDom
+        englishCDEnabled={englishCD?.enabled}
+        englishCDDocumentId={englishCD?.documentId}
+        englishCDTag={englishCD?.tag}
+        englishCDRevision={englishCD?.revision}
+        onEnglishCDLookup={englishCD?.lookup}
+        onEnglishCDPhrases={englishCD?.phrases}
+        onEnglishCDOpen={englishCD?.open}
+        onEnglishCDDocument={englishCD?.publish}
+        onEnglishCDError={englishCD?.reportError}
         htmlContent={displayedBookmarkWithContent.content.htmlContent ?? ""}
         contentStyle={contentStyle}
         isDark={isDark}
