@@ -67,3 +67,26 @@ pnpm --filter @karakeep/mobile typecheck
 ```
 
 学习代码不会自动保存文章副本或重放离线写入。当前 WebView 不支持 CSS Custom Highlight 时会明确提示，选区、词表与显式导入仍可用；可更新 Android System WebView 后再验证高亮。真机重点确认：长按复制和选区拖动、原批注保存、点词与链接互不抢手势、词卡外部关闭后回到练习原位置、手机键盘与弹层布局。
+
+## GitHub Actions APK 与长期分支
+
+英语学习改动和独立 APK 流程维护在 `feature/englishcd-mobile`。该分支从已有英语学习提交之后创建；此前已推送到 `main` 的提交保持原样，不改写远端历史。后续自己的功能提交到这个分支，上游更新通过 merge 合入，原来的商店发布工作流不改动。
+
+- 每次 push `feature/englishcd-mobile`，触发 [EnglishCD Android APK](../../.github/workflows/mobile-apk.yml)。同分支有新提交时取消旧构建，避免重复消耗。
+- 安装锁定依赖，执行移动端 TypeScript 和 EnglishCD 单元测试，通过 Expo prebuild + Gradle `assembleRelease` 生成 APK；不调用 EAS、不需要 Expo/Sentry Token、不跑端到端。
+- 包名 `app.hoarder.hoardermobile.dev`，名称 `Karakeep (Dev)`，仅 ARM64 手机。虽然使用 development 名称，构建类型是 Release，内置 JS/阅读器资源，不需要 Expo Go 或 Metro。
+- 使用 Expo 模板附带的公开测试签名，仅供个人测试，不用于商店发布或可信正式分发。与官方版并装，首次安装需重新登录 Karakeep、配置 EnglishCD。后续模板签名未变时可以覆盖更新；将来更换签名需迁移或重装，卸载会清掉本地配置。
+- 构建成功后打开仓库 **Actions → EnglishCD Android APK → 对应运行 → Artifacts**，下载 `karakeep-englishcd-arm64-运行序号`，解压安装 `app-release.apk`。产物保留 14 天，下载需登录 GitHub。
+- Fork 若禁用 Actions，先在仓库 Actions 页启用，再向该分支 push。工作流虽然声明 `workflow_dispatch`，但 GitHub 要求其存在于默认分支才支持手动触发；仅放在功能分支时，以 push 触发为准，已有运行可用 **Re-run jobs** 重跑。不为显示手动按钮修改默认分支或污染 `main`。
+
+同步上游示例（`upstream` 只需配置一次；先确认本地工作区干净）：
+
+```sh
+git remote add upstream https://github.com/karakeep-app/karakeep.git
+git fetch upstream
+git switch feature/englishcd-mobile
+git merge upstream/main
+git push origin feature/englishcd-mobile
+```
+
+本轮已通过 actionlint、YAML 解析/格式与 diff 检查、完整移动端类型检查、59 项单元测试和 Android prebuild；生成的包名、Release 签名、HTTP 网络配置已核对，prebuild 未改变 package.json 或锁文件。本机仍未安装 Android SDK/JDK；APK 原生编译是否通过，以 Actions 实际运行结果为准，不以配置已提交代替成功产物。

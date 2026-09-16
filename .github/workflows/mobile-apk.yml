@@ -1,0 +1,89 @@
+name: EnglishCD Android APK
+
+on:
+  push:
+    branches: ["feature/englishcd-mobile"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_VARIANT: development
+  CI: "1"
+  EXPO_NO_TELEMETRY: "1"
+  SENTRY_DISABLE_AUTO_UPLOAD: "true"
+  HUSKY: "0"
+  NODE_OPTIONS: --max-old-space-size=4096
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      # The mobile bundle uses packaged binaries; do not build unrelated server
+      # dependencies or download browser engines from this monorepo.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check mobile types and EnglishCD unit tests
+        run: |
+          pnpm --filter @karakeep/mobile typecheck
+          pnpm --filter @karakeep/mobile test:englishcd
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+        with:
+          cache-read-only: false
+
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --no-install
+
+      # Release bundles JS/assets into the APK. The development app ID keeps it
+      # separate from the official app; Expo's test signing key is not for stores.
+      - name: Build standalone ARM64 APK
+        working-directory: apps/mobile/android
+        run: >-
+          ./gradlew :app:assembleRelease --no-daemon --max-workers=2 --stacktrace
+          -PreactNativeArchitectures=arm64-v8a
+          -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: karakeep-englishcd-arm64-${{ github.run_number }}
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
