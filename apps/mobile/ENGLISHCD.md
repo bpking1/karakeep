@@ -45,6 +45,19 @@ Expo 56 `use dom` 默认使用 @expo/dom-webview。首版优先扩展已有划�
 
 TypeScript 通过不等于 Android/Metro 构建或真机通过。单独记录未执行的 Android 构建、WebView 手势/菜单、网络连接与设备验收。
 
+## 2026-10-07：对齐 EnglishCD 09-30 词汇规则
+
+跟进 EnglishCD Web、Chrome 扩展和鸿蒙端在 2026-09-30 的改动。下列规则替代上文中「短期内存缓存、第一版不持久化学习查询」和「短语仅高亮已收藏项」两条：
+
+- **查词缓存持久化**：`/words/lookup` 结果按表面词存入独立的 MMKV 实例（`word-store-mmkv.ts`），按连接地址和 Key 指纹隔离，换连接即清空。只保存词典数据与个人状态，不存正文和 Key。缓存没有时间过期：词典版本变化时整体清空；本端写入只标记写入的 key 及其词形；其他设备的写入（`/vocabulary/version` 的 revision 变化）只让未掌握的词典词需要重读。重读走 `POST /words/states`，只取状态和收藏标记，不删除词典数据。规则在 `word-cache.ts`，从 EnglishCD `shared/word-cache` 移植；缓存流程在 `cache.ts`，与扩展的 background cache 对照。
+- **词卡**：先显示缓存结果，同时向服务器读取最新结果；状态或收藏有变化时刷新阅读页高亮。
+- **短语库**：`GET /words/phrase-library` 在版本不变时保留缓存，与个人短语合并后用于高亮。个人短语来自 `/words/phrases`，包括已收藏或设过状态的短语，个人状态决定是否高亮。
+- **词典未收录的词**：没有词条、没有状态也没有收藏的词（品牌、人名、拼写错误）不高亮，不进本文词表，其他设备有变化时也不重读。
+- **词族**：本文词表把只有唯一原形的词形合并到原形下，并列出出现过的词形。批量状态和加入学习用响应里的 `terms` 刷新整个词族。
+- **暂不学习（ignored）**：不计入总数，也不计入未掌握；默认的「未掌握」筛选只含未学习和学习中。
+
+验证：EnglishCD 相关 `.mjs` 单元测试和 `reading*.test.ts` 通过。本机未安装依赖，所以借用其他工作区的 typescript/react/happy-dom，在临时镜像里运行，并用桩类型单独检查了 `lib/englishcd` 的 TypeScript。三项 shared-highlighter 测试在镜像里改动前就失败（缺依赖），与本次无关。按用户要求未在本地编译 APK，也未运行完整的移动端 `tsc` 和 Oxlint。
+
 ## 实施进度
 
 - 2026-09-16：修复缓存文章再次打开的启动竞争。Expo DOM 会固定首次 `initialProps`，而 EnglishCD 连接在父组件 effect 中创建；缓存命中时不能先以 enabled=false 挂载 WebView，再依赖可能早于 DOM 监听的属性推送。ReaderSession 显式提供 initializing，Reader 等本地设置/连接就绪后挂载；不是等待后端网络，也不清正文缓存、不重建已挂载正文来刷新词状态。返回仍挂载的阅读页通过 useFocusEffect 失效词缓存/递增 revision，继续复用原高亮控制器和批量接口，不触发 AI。

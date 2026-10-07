@@ -1,4 +1,5 @@
 import type { ReadingSelection, WordInfo } from "./types";
+import { dictionaryWord } from "./word-cache";
 
 // Adapted from EnglishCD shared/reading.ts. Surface extraction only: the server
 // owns term keys, lemmas, dictionary tags and vocabulary state.
@@ -28,8 +29,13 @@ export function wordsIn(text: string) {
   }));
 }
 
+// A learnable word: the dictionary has it, or the user gave it a state or saved
+// it. Brands, user names and typos are skipped in highlighting and study lists.
+export { dictionaryWord } from "./word-cache";
+
 export function highlightKind(info: WordInfo, tag = "") {
   if (info.state === "known" || info.state === "ignored") return null;
+  if (!dictionaryWord(info)) return null;
   if (tag && !info.entry?.tags?.includes(tag)) return null;
   return info.collected ? "collected" : "new";
 }

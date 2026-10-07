@@ -1,4 +1,5 @@
-import { WordLookupCache } from "./cache";
+import { WordLookupCache, type ServerVersions } from "./cache";
+import { mergePhrases } from "./phrases";
 import type {
   Capabilities,
   CaptureRequest,
@@ -14,6 +15,12 @@ import type {
   WordInfo,
   WordState,
 } from "./types";
+import type {
+  LibraryPhrase,
+  WordStateItem,
+  WordStore,
+  WordVersions,
+} from "./word-cache";
 
 export function normalizeConnection(
   value: EnglishCDConnection,
@@ -49,30 +56,69 @@ function idempotencyKey(key: string) {
 }
 
 // The only EnglishCD fetch owner. One instance is a connection snapshot;
-// replacing/closing it cancels its requests and discards its in-memory cache.
+// replacing/closing it cancels its requests. Lookup results persist in the
+// injected store (MMKV in the app) under the shared EnglishCD cache rules.
 export class EnglishCDClient {
   private readonly connection: EnglishCDConnection;
-  private readonly cache = new WordLookupCache();
+  private readonly cache: WordLookupCache;
   private readonly requests = new Set<AbortController>();
   private closed = false;
   private phraseRequest?: Promise<CollectedPhrase[]>;
   private phraseCache?: { items: CollectedPhrase[]; expires: number };
   private generation = 0;
 
-  constructor(connection: EnglishCDConnection) {
+  constructor(connection: EnglishCDConnection, store?: WordStore) {
     this.connection = normalizeConnection(connection);
+    this.cache = new WordLookupCache(
+      {
+        lookup: (words) =>
+          this.request<{ items: WordInfo[] } & WordVersions>(
+            "/words/lookup",
+            "POST",
+            { words },
+          ),
+        states: (words) =>
+          this.request<{ items: WordStateItem[] } & WordVersions>(
+            "/words/states",
+            "POST",
+            { words },
+          ),
+        version: () => this.request<ServerVersions>("/vocabulary/version"),
+        phraseLibrary: () =>
+          this.request<{ version: string; phrases: LibraryPhrase[] }>(
+            "/words/phrase-library",
+          ),
+      },
+      store,
+    );
   }
 
-  invalidate() {
+  private dropPhrases() {
     this.generation++;
-    this.cache.invalidate();
     this.phraseCache = undefined;
     this.phraseRequest = undefined;
   }
 
+  // Returning to the reader: re-read personal phrases and check whether another
+  // device changed words. Cached dictionary data is kept.
+  refresh(): Promise<boolean> {
+    this.dropPhrases();
+    return this.cache.sync(true);
+  }
+
+  // An own write: only the written keys' personal state is re-read.
+  private async written(keys: string[], revision?: number) {
+    this.dropPhrases();
+    await this.cache.written(
+      keys.filter((key) => key.trim()),
+      revision,
+    );
+  }
+
   close() {
     this.closed = true;
-    this.invalidate();
+    this.dropPhrases();
+    this.cache.close();
     for (const request of this.requests) request.abort();
     this.requests.clear();
   }
@@ -81,29 +127,32 @@ export class EnglishCDClient {
     return this.request<Capabilities>("/capabilities");
   }
 
-  lookup(words: string[]): Promise<WordInfo[]> {
+  // `fresh` skips the cache (an explicitly opened word card) and refreshes it.
+  lookup(words: string[], fresh = false): Promise<WordInfo[]> {
     if (this.closed) return Promise.reject(new Error("EnglishCD 连接已关闭"));
     if (!words.length) return Promise.resolve([]);
     if (words.some((word) => typeof word !== "string" || !word.trim())) {
       return Promise.reject(new Error("词语不能为空"));
     }
-    return this.cache.lookup(words, async (missing) => {
-      const items: WordInfo[] = [];
-      for (let offset = 0; offset < missing.length; offset += 500) {
-        const result = await this.request<{ items: WordInfo[] }>(
-          "/words/lookup",
-          "POST",
-          { words: missing.slice(offset, offset + 500) },
-        );
-        if (!Array.isArray(result.items))
-          throw new Error("词汇查询响应缺少 items");
-        items.push(...result.items);
-      }
-      return items;
-    });
+    return this.cache.lookup(words, fresh);
   }
 
+  // The cached lookup, if any, shown at once while a fresh read is in flight.
+  cachedWord(word: string): WordInfo | undefined {
+    return this.closed ? undefined : this.cache.peek(word);
+  }
+
+  // Highlight candidates: the phrase library merged with the user's own phrases
+  // (saved or given a state), whose states decide highlighting.
   async phrases(): Promise<CollectedPhrase[]> {
+    const [library, personal] = await Promise.all([
+      this.cache.phraseLibrary().catch((): LibraryPhrase[] => []),
+      this.personalPhrases(),
+    ]);
+    return mergePhrases(library, personal);
+  }
+
+  private async personalPhrases(): Promise<CollectedPhrase[]> {
     if (this.closed) throw new Error("EnglishCD 连接已关闭");
     if (this.phraseCache && this.phraseCache.expires > Date.now())
       return this.phraseCache.items;
@@ -199,7 +248,11 @@ export class EnglishCDClient {
       term: { termKey: string; state: WordState };
       vocabularyRevision: number;
     }>("/vocabulary/state", "PUT", { termKey, state });
-    this.invalidate();
+    // The server writes the base form; refresh the whole family through it.
+    await this.written(
+      [termKey, result.term?.termKey ?? ""],
+      result.vocabularyRevision,
+    );
     return result;
   }
 
@@ -209,7 +262,7 @@ export class EnglishCDClient {
       "PUT",
       { terms, state },
     );
-    this.invalidate();
+    await this.written(result.terms ?? terms, result.vocabularyRevision);
     return result;
   }
 
@@ -219,7 +272,7 @@ export class EnglishCDClient {
       "POST",
       { terms },
     );
-    this.invalidate();
+    await this.written(result.terms ?? terms, result.vocabularyRevision);
     return result;
   }
 
@@ -230,7 +283,10 @@ export class EnglishCDClient {
       payload,
       idempotencyKey(key),
     );
-    this.invalidate();
+    await this.written(
+      payload.termKey ? [payload.termKey] : [],
+      result.vocabularyRevision,
+    );
     return result;
   }
 

@@ -36,11 +36,13 @@ function fixture(html: string, supported = true) {
     tag: "",
     lookup: async (words) => {
       batches.push(words);
+      // Dictionary words: entries without a dictionary are never highlighted.
       return words.map((input) => ({
         input,
         termKey: input.toLowerCase(),
         state: "unknown",
         collected: false,
+        entry: { displayText: input.toLowerCase() },
       }));
     },
     phrases: async () => [],

@@ -53,9 +53,12 @@ export interface WordInfo {
   lemmaCandidates?: string[];
 }
 
+// A highlight candidate. `text` is the surface to match when it differs from the
+// key (a plural variant from the phrase library); state decides highlighting.
 export interface CollectedPhrase {
   termKey: string;
   state: WordState;
+  text?: string;
 }
 
 export interface AIDictionaryEntry {
@@ -91,6 +94,8 @@ export interface Capabilities {
 export interface SetStatesResult {
   changed: number;
   vocabularyRevision: number;
+  // Keys actually written: a form with a single base form writes the base form.
+  terms?: string[];
 }
 
 export interface StartLearningResult extends SetStatesResult {

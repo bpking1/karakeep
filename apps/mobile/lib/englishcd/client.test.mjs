@@ -24,14 +24,35 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
-function client(fetch, globals) {
+function client(fetch, globals, store) {
   const { EnglishCDClient } = load(
     "client",
     { "expo/fetch": { fetch } },
     globals,
   );
-  return new EnglishCDClient(connection);
+  return new EnglishCDClient(connection, store);
 }
+// A fake server: version checks answer at `versions`, other paths go to `handle`.
+function server(handle, versions = { vocabularyRevision: 1 }) {
+  const current = {
+    dictionaryVersion: "dict-1",
+    phraseLibraryVersion: "phrases-1",
+    ...versions,
+  };
+  const fetch = async (url, init) => {
+    if (url.endsWith("/vocabulary/version")) return json(current);
+    if (url.endsWith("/words/phrase-library"))
+      return json({ version: current.phraseLibraryVersion, phrases: [] });
+    return handle(url, init, current);
+  };
+  return { fetch, current };
+}
+const lookupResult = (inputs, current, state) =>
+  json({
+    items: inputs.map((value) => word(value, state)),
+    vocabularyRevision: current.vocabularyRevision,
+    dictionaryVersion: current.dictionaryVersion,
+  });
 
 test("connection keeps subpath and rejects credentials, query and invalid protocols", () => {
   const { normalizeConnection } = load("client", { "expo/fetch": {} });
@@ -68,79 +89,126 @@ test("Bearer is isolated in headers, subpath retained, redirect and cookies disa
   assert.ok(!url.includes(connection.apiKey));
 });
 
-test("lookups batch at 500, deduplicate in-flight words and reuse short-lived values", async () => {
-  const first = deferred();
-  const batches = [];
-  const api = client(async (_url, init) => {
+test("lookups batch at 500, persist without time expiry and re-read only written states", async () => {
+  const { memoryWordStore } = load("word-cache");
+  const store = memoryWordStore();
+  const lookups = [];
+  const states = [];
+  const { fetch } = server(async (url, init, current) => {
     const inputs = JSON.parse(init.body).words;
-    batches.push(inputs);
-    if (batches.length === 1) await first.promise;
-    return json({ items: inputs.map((value) => word(value)) });
+    if (url.endsWith("/words/states")) {
+      states.push(inputs);
+      return json({
+        items: inputs.map((input) => ({ ...word(input, "known") })),
+        vocabularyRevision: current.vocabularyRevision,
+        dictionaryVersion: current.dictionaryVersion,
+      });
+    }
+    if (url.endsWith("/vocabulary/state")) {
+      current.vocabularyRevision++;
+      return json({
+        term: { termKey: "word0", state: "known" },
+        vocabularyRevision: current.vocabularyRevision,
+      });
+    }
+    lookups.push(inputs);
+    return lookupResult(inputs, current);
   });
+  const api = client(fetch, undefined, store);
   const inputs = Array.from({ length: 1001 }, (_, index) => "word" + index);
-  const pending = api.lookup(inputs);
-  const same = api.lookup(["word0", "word3"]);
-  assert.equal(batches.length, 1);
-  first.resolve();
-  assert.equal((await pending).length, 1001);
+  assert.equal((await api.lookup(inputs)).length, 1001);
   assert.deepEqual(
-    Array.from(await same, (item) => item.input),
-    ["word0", "word3"],
-  );
-  await api.lookup(["word0"]);
-  assert.deepEqual(
-    batches.map((batch) => batch.length),
+    lookups.map((batch) => batch.length),
     [500, 500, 1],
   );
-  api.invalidate();
-  await api.lookup(["word0"]);
-  assert.equal(batches.length, 4);
+  await api.lookup(["word0", "word3"]);
+  assert.equal(lookups.length, 3);
+  await api.setState("word0", "known");
+  const after = await api.lookup(["word0", "word3"]);
+  assert.deepEqual(states, [["word0"]]);
+  assert.equal(after[0].state, "known");
+  assert.equal(after[1].state, "unknown");
+  assert.equal(lookups.length, 3);
+  // A new client (another article) reuses the persisted results.
+  const next = client(fetch, undefined, store);
+  assert.equal(next.cachedWord("word5").input, "word5");
+  await next.lookup(["word5"]);
+  assert.equal(lookups.length, 3);
+  // An explicitly opened card asks the server and refreshes the cache.
+  await next.lookup(["word5"], true);
+  assert.equal(lookups.length, 4);
 });
 
-test("cache expiry and invalidation cannot be undone by old in-flight reads", async () => {
+test("another device's change re-reads unmastered dictionary words; a new dictionary drops everything", async () => {
   const { WordLookupCache } = load("cache");
   let now = 0;
-  const cache = new WordLookupCache(30, () => now);
-  const slow = deferred();
-  const old = cache.lookup(["walk"], () => slow.promise);
-  cache.invalidate();
-  const fresh = await cache.lookup(["walk"], async () => [
-    word("walk", "known"),
-  ]);
-  slow.resolve([word("walk")]);
-  await old;
-  assert.equal(fresh[0].state, "known");
-  assert.equal(
-    (
-      await cache.lookup(["walk"], async () => {
-        throw new Error("cached");
-      })
-    )[0].state,
-    "known",
+  const current = { vocabularyRevision: 1, dictionaryVersion: "dict-1" };
+  const calls = { lookup: [], states: [] };
+  const entry = { displayText: "x" };
+  const info = (input) => ({
+    ...word(input, input === "mastered" ? "known" : "unknown"),
+    entry: input === "brand" ? null : entry,
+  });
+  const cache = new WordLookupCache(
+    {
+      version: async () => ({ ...current }),
+      lookup: async (words) => {
+        calls.lookup.push(words);
+        return { items: words.map(info), ...current };
+      },
+      states: async (words) => {
+        calls.states.push(words);
+        return { items: words.map(info), ...current };
+      },
+      phraseLibrary: async () => ({ version: "p", phrases: [] }),
+    },
+    undefined,
+    () => now,
   );
-  now = 31;
-  assert.equal(
-    (await cache.lookup(["walk"], async () => [word("walk", "learning")]))[0]
-      .state,
-    "learning",
-  );
+  const words = ["walk", "mastered", "brand"];
+  await cache.lookup(words);
+  current.vocabularyRevision = 5;
+  now = 31_000;
+  await cache.lookup(words);
+  // Mastered and non-dictionary words keep their cached state.
+  assert.deepEqual(plain(calls.states), [["walk"]]);
+  assert.equal(calls.lookup.length, 1);
+  current.dictionaryVersion = "dict-2";
+  now = 62_000;
+  await cache.lookup(words);
+  assert.equal(calls.lookup.length, 2);
 });
 
 test("incomplete lookup fails without caching partial results or automatic retry", async () => {
   let calls = 0;
-  const api = client(async () => {
+  const { fetch } = server(async (_url, _init, current) => {
     calls++;
-    return json({ items: [word("walk")] });
+    return lookupResult(["walk"], current);
   });
+  const api = client(fetch);
   await assert.rejects(api.lookup(["walk", "run"]), /不完整/);
   assert.equal(calls, 1);
   await api.lookup(["walk"]);
   assert.equal(calls, 2);
 });
 
-test("phrases collect all pages and reject a repeated cursor", async () => {
+test("phrases merge the library with all personal pages and reject a repeated cursor", async () => {
   const pages = [];
   const api = client(async (url) => {
+    if (url.endsWith("/vocabulary/version"))
+      return json({
+        vocabularyRevision: 1,
+        dictionaryVersion: "",
+        phraseLibraryVersion: "p1",
+      });
+    if (url.endsWith("/words/phrase-library"))
+      return json({
+        version: "p1",
+        phrases: [
+          { text: "look up" },
+          { text: "pieces of cake", termKey: "piece of cake" },
+        ],
+      });
     pages.push(url);
     return json({
       items: [
@@ -152,12 +220,18 @@ test("phrases collect all pages and reject a repeated cursor", async () => {
       nextCursor: pages.length === 1 ? "page two" : null,
     });
   });
-  assert.equal((await api.phrases()).length, 2);
+  const merged = plain(await api.phrases());
+  assert.deepEqual(merged, [
+    { termKey: "look up", text: "look up", state: "unknown" },
+    { termKey: "piece of cake", text: "pieces of cake", state: "unknown" },
+    { termKey: "take care", state: "unknown" },
+  ]);
   assert.match(pages[1], /cursor=page%20two$/);
   await api.phrases();
   assert.equal(pages.length, 2);
   let calls = 0;
-  const broken = client(async () => {
+  const broken = client(async (url) => {
+    if (!url.includes("/words/phrases?")) return json({}, 404);
     calls++;
     return json({ items: [], nextCursor: "repeat" });
   });
@@ -188,13 +262,16 @@ test("malformed false records cannot masquerade as a cache miss", async () => {
   await assert.rejects(api.record("walked"), /不完整/);
 });
 
-test("write contracts retain exact term keys, fixed idempotency keys and invalidate words", async () => {
+test("write contracts retain exact term keys, fixed idempotency keys and re-read written states", async () => {
   const calls = [];
-  const api = client(async (url, init) => {
+  const { fetch } = server(async (url, init, current) => {
     calls.push({ url, init, body: init.body && JSON.parse(init.body) });
-    if (url.endsWith("/words/lookup")) return json({ items: [word("walked")] });
+    if (url.endsWith("/words/lookup")) return lookupResult(["walked"], current);
+    if (url.endsWith("/words/states"))
+      return json({ items: [word("walked", "known")], ...current });
     if (url.endsWith("/word-visits"))
       return new Response(null, { status: 204 });
+    current.vocabularyRevision = 2;
     return json({
       changed: 1,
       skipped: 0,
@@ -203,6 +280,7 @@ test("write contracts retain exact term keys, fixed idempotency keys and invalid
       term: { termKey: "walked", state: "known" },
     });
   });
+  const api = client(fetch);
   await api.lookup(["walked"]);
   await api.setState("walked", "known");
   await api.lookup(["walked"]);
@@ -221,7 +299,11 @@ test("write contracts retain exact term keys, fixed idempotency keys and invalid
   await api.capture(capture, "capture-key-0001");
   assert.equal(
     calls.filter((call) => call.url.endsWith("/words/lookup")).length,
-    2,
+    1,
+  );
+  assert.deepEqual(
+    calls.find((call) => call.url.endsWith("/words/states")).body,
+    { words: ["walked"] },
   );
   assert.equal(
     calls.find((call) => call.url.endsWith("/vocabulary/state")).body.termKey,
@@ -302,7 +384,7 @@ test("close cancels in-flight requests and prevents future cached or network rea
   const pending = api.lookup(["walk"]);
   assert.equal(started, true);
   api.close();
-  await assert.rejects(pending, /aborted/);
+  await assert.rejects(pending, /aborted|已关闭/);
   await assert.rejects(api.lookup(["walk"]), /已关闭/);
   await assert.rejects(api.phrases(), /已关闭/);
 });

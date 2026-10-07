@@ -1,23 +1,43 @@
 import type { CollectedPhrase } from "./types";
 import { utf8ByteLength, wordsIn } from "./reading";
+import type { LibraryPhrase } from "./word-cache";
 
-// Adapted from EnglishCD shared/phrases.ts: only saved, continuous phrases,
-// longest first. No dictionary enumeration or local lemma inference.
+// Adapted from EnglishCD shared/phrases.ts: the server's phrase library plus the
+// user's own phrases, continuous and longest first. No local lemma inference.
 export type ReadingToken = ReturnType<typeof wordsIn>[number] & {
   phrase?: string;
 };
 const normalize = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[’ʼ]/g, "'")
-    .replace(/\s+/g, " ");
+  value.trim().toLowerCase().replace(/[’ʼ]/g, "'").replace(/\s+/g, " ");
+
+// Library phrases start unknown; the user's own phrases (saved or given a state)
+// override their state and add phrases missing from the library.
+export function mergePhrases(
+  library: readonly LibraryPhrase[],
+  personal: readonly CollectedPhrase[],
+): CollectedPhrase[] {
+  const states = new Map(
+    personal.map((phrase) => [phrase.termKey, phrase.state]),
+  );
+  const merged: CollectedPhrase[] = library.map((phrase) => {
+    const termKey = phrase.termKey ?? phrase.text;
+    return {
+      termKey,
+      text: phrase.text,
+      state: states.get(termKey) ?? "unknown",
+    };
+  });
+  const texts = new Set(library.map((phrase) => phrase.text));
+  for (const phrase of personal)
+    if (!texts.has(normalize(phrase.termKey))) merged.push(phrase);
+  return merged;
+}
 
 export function phraseMatcher(phrases: readonly CollectedPhrase[]) {
   const byFirst = new Map<string, { key: string; words: string[] }[]>();
   for (const phrase of phrases) {
     if (phrase.state === "known" || phrase.state === "ignored") continue;
-    const key = normalize(phrase.termKey);
+    const key = normalize(phrase.text ?? phrase.termKey);
     const words = wordsIn(key).map((token) => token.word);
     if (
       words.length < 2 ||

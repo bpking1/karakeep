@@ -17,6 +17,7 @@ import {
   mergeInventory,
   ROUND_SIZE,
   selectedWords,
+  studySummary,
   tagLabel,
   toggleSelection,
   wordTags,
@@ -104,7 +105,8 @@ export function StudyPanel({
         counts.set(label, (counts.get(label) ?? 0) + 1);
     return [...counts].sort(([a], [b]) => a.localeCompare(b));
   }, [words]);
-  const known = words.filter((word) => word.state === "known").length;
+  // ignored (暂不学习) is neither mastered nor counted as still to learn.
+  const summary = useMemo(() => studySummary(words), [words]);
 
   const write = async (nextState?: WordState) => {
     if (busy.current || loading || !selected.size) return;
@@ -163,8 +165,7 @@ export function StudyPanel({
             variant="plain"
             disabled={loading || writing}
             onPress={() => {
-              client.invalidate();
-              setRetry((n) => n + 1);
+              void client.refresh().finally(() => setRetry((n) => n + 1));
             }}
           >
             <Text>重新读取词表</Text>
@@ -263,8 +264,8 @@ export function StudyPanel({
             ListHeaderComponent={
               <View className="gap-3 pb-3" style={{ flexShrink: 0 }}>
                 <Text className="text-sm text-muted-foreground">
-                  共 {words.length} 词 · 已掌握 {known} · 未掌握{" "}
-                  {words.length - known}
+                  共 {summary.total} 词 · 已掌握 {summary.known} · 未掌握{" "}
+                  {summary.unmastered}
                 </Text>
                 <Input
                   placeholder="搜索词语"
@@ -376,6 +377,14 @@ export function StudyPanel({
                 </Text>
                 <View className="flex-1">
                   <Text className="font-medium">{item.termKey}</Text>
+                  {item.forms.some((form) => form !== item.termKey) && (
+                    <Text
+                      numberOfLines={1}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {item.forms.join(" · ")}
+                    </Text>
+                  )}
                   <Text
                     numberOfLines={1}
                     className="text-xs text-muted-foreground"

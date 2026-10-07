@@ -13,6 +13,7 @@ import WordCard from "@/components/englishcd/WordCard";
 import { StudyPanel } from "@/components/englishcd/StudyPanel";
 import { ImportPanel } from "@/components/englishcd/ImportPanel";
 import { EnglishCDClient } from "@/lib/englishcd/client";
+import { mmkvWordStore } from "@/lib/englishcd/word-store-mmkv";
 import { useEnglishCDSettings } from "@/lib/englishcd/settings";
 import { selectionError } from "@/lib/englishcd/word-card";
 import type {
@@ -100,18 +101,20 @@ export function EnglishCDReaderSession({
       setConnection(undefined);
       return;
     }
-    const next = new EnglishCDClient({
-      url: settings.url,
-      apiKey: settings.apiKey,
-    });
+    const next = new EnglishCDClient(
+      { url: settings.url, apiKey: settings.apiKey },
+      mmkvWordStore(settings.url, settings.apiKey),
+    );
     setConnection({ client: next, url: settings.url, apiKey: settings.apiKey });
     return () => next.close();
   }, [enabled, settings.url, settings.apiKey, documentId]);
 
+  // Lookups persist across articles; returning or a write re-checks the server
+  // versions (another device's changes) before rebuilding highlights.
   const refresh = useCallback(() => {
-    client?.invalidate();
-    setRevision((value) => value + 1);
     setError("");
+    if (!client) return;
+    void client.refresh().finally(() => setRevision((value) => value + 1));
   }, [client]);
 
   useFocusEffect(

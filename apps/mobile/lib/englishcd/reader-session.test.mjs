@@ -37,9 +37,10 @@ async function fixture() {
     close() {
       this.closed = true;
     }
-    invalidate() {
+    refresh() {
       assert.equal(this.closed, false);
       this.invalidations++;
+      return Promise.resolve(false);
     }
     lookup(words) {
       assert.equal(this.closed, false);
@@ -77,6 +78,7 @@ async function fixture() {
       useEnglishCDSettings: () => ({ settings, isLoading: settingsLoading }),
     },
     "@/lib/englishcd/client": { EnglishCDClient: Client },
+    "@/lib/englishcd/word-store-mmkv": { mmkvWordStore: () => ({}) },
     "@/lib/englishcd/word-card": { selectionError: () => "" },
     "@/components/englishcd/WordCard": { default: () => null },
     "@/components/englishcd/StudyPanel": { StudyPanel: () => null },
@@ -193,7 +195,7 @@ test("cached articles and repeat opens mount DOM only with a ready EnglishCD con
   }
 });
 
-test("returning to a retained reading screen invalidates words and rebuilds highlights without replacing the client", async () => {
+test("returning to a retained reading screen re-checks word versions and rebuilds highlights without replacing the client", async () => {
   const f = await fixture();
   try {
     await f.render();

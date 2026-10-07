@@ -66,7 +66,7 @@ test("missing server result is an error, not a partial word count", () => {
   );
 });
 
-test("unmastered includes ignored; tags come from imported dictionary labels", () => {
+test("unmastered and counts leave out ignored; tags come from imported dictionary labels", () => {
   const inventory = study.createInventory(document("walk run skip"));
   const words = study.mergeInventory(inventory, [
     info("walk", "walk", "known", ["cet4"]),
@@ -78,8 +78,13 @@ test("unmastered includes ignored; tags come from imported dictionary labels", (
       study.filterWords(words, "unmastered", "", ""),
       (word) => word.termKey,
     ),
-    ["run", "skip"],
+    ["skip"],
   );
+  assert.deepEqual(plain(study.studySummary(words)), {
+    total: 2,
+    known: 1,
+    unmastered: 1,
+  });
   assert.equal(study.filterWords(words, "all", "b1", "RUN")[0].termKey, "run");
   assert.deepEqual(plain(study.wordTags(words[2])), ["ungraded"]);
 });
@@ -148,4 +153,24 @@ test("article limits fail explicitly rather than silently truncating", () => {
       ),
     /5000/,
   );
+});
+
+test("word families merge under the base form and non-dictionary words are skipped", () => {
+  const inventory = study.createInventory(
+    document("walked walks Zorblax walked"),
+  );
+  const base = (input) => ({
+    ...info(input),
+    lemmaCandidates: ["walk"],
+  });
+  const words = study.mergeInventory(inventory, [
+    base("walked"),
+    base("walks"),
+    { ...info("Zorblax", "zorblax"), entry: null },
+  ]);
+  assert.equal(words.length, 1);
+  assert.equal(words[0].termKey, "walk");
+  assert.equal(words[0].count, 3);
+  assert.equal(words[0].selection.termKey, "walk");
+  assert.deepEqual(plain(words[0].forms), ["walked", "walks"]);
 });

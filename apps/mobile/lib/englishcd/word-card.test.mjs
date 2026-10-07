@@ -53,6 +53,7 @@ function fixture(overrides = {}, action = "lookup", input = selection) {
   };
   const api = {
     lookup: async () => [word],
+    cachedWord: () => undefined,
     capabilities: async () => ({ translation: { enabled: true } }),
     record: async (...args) => {
       calls.record.push(args);
@@ -303,4 +304,24 @@ test("closing during cache read never starts AI afterwards", async () => {
   read.resolve({ record: null });
   await initialization;
   assert.equal(calls.translate.length, 0);
+});
+
+test("a cached word shows at once, the card re-reads it and a changed state refreshes the reader", async () => {
+  const fresh = deferred();
+  const lookups = [];
+  const { session, calls } = fixture({
+    cachedWord: () => ({ ...word, state: "unknown" }),
+    lookup: async (...args) => {
+      lookups.push(args);
+      return fresh.promise;
+    },
+  });
+  const opening = session.initialize();
+  assert.equal(session.snapshot().word.state, "unknown");
+  assert.equal(lookups[0][1], true);
+  fresh.resolve([{ ...word, state: "known" }]);
+  await opening;
+  await new Promise((done) => setTimeout(done, 0));
+  assert.equal(session.snapshot().word.state, "known");
+  assert.equal(calls.changed, 1);
 });

@@ -13,6 +13,7 @@ type CardKind = "word" | "phrase" | "sentence";
 type CardClient = Pick<
   EnglishCDClient,
   | "lookup"
+  | "cachedWord"
   | "record"
   | "capabilities"
   | "translate"
@@ -199,12 +200,21 @@ export class WordCardSession {
       return;
     const generation = this.generation;
     const request = ++this.wordRequest;
+    const key = this.selection.termKey || this.selection.selectedText.trim();
+    // Show the cached result at once, then refresh it from the server.
+    const cached = this.client.cachedWord(key);
+    if (cached && !this.value.word) this.update({ word: cached });
     try {
-      const words = await this.client.lookup([
-        this.selection.termKey || this.selection.selectedText.trim(),
-      ]);
-      if (this.current(generation) && request === this.wordRequest)
-        this.update({ word: words[0] });
+      const [word] = await this.client.lookup([key], true);
+      if (this.current(generation) && request === this.wordRequest) {
+        this.update({ word });
+        // Another device changed it: the reader's highlights are outdated too.
+        if (
+          cached &&
+          (cached.state !== word.state || cached.collected !== word.collected)
+        )
+          this.changed();
+      }
     } catch (error) {
       if (this.current(generation) && request === this.wordRequest)
         this.update({ writeError: errorMessage(error) });

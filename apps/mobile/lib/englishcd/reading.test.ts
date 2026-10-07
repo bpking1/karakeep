@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { phraseMatcher } from "./phrases";
+import { mergePhrases, phraseMatcher } from "./phrases";
 import {
   highlightKind,
   isReadingTap,
@@ -38,6 +38,27 @@ test("highlight rules use server state and tags, without treating ignored as kno
   assert.equal(highlightKind({ ...word, state: "known" }), null);
   assert.equal(highlightKind({ ...word, state: "ignored" }), null);
   assert.equal(highlightKind(word, "cet6"), null);
+  // Not in the dictionary, no state, not saved: a brand, name or typo.
+  const unknownWord = { ...word, entry: null };
+  assert.equal(highlightKind(unknownWord), null);
+  assert.equal(highlightKind({ ...unknownWord, state: "learning" }), "new");
+  assert.equal(highlightKind({ ...unknownWord, collected: true }), "collected");
+});
+
+test("library phrases match their surface text and take the personal state", () => {
+  const phrases = mergePhrases(
+    [{ text: "pieces of cake", termKey: "piece of cake" }, { text: "look up" }],
+    [
+      { termKey: "look up", state: "known" },
+      { termKey: "take care", state: "learning" },
+    ],
+  );
+  const match = phraseMatcher(phrases);
+  const tokens = match("Pieces of cake. Look up. Take care.");
+  assert.deepEqual(
+    tokens.filter((token) => token.phrase).map((token) => token.phrase),
+    ["piece of cake", "take care"],
+  );
 });
 
 test("phrases prefer longest saved term and do not cross punctuation or word boundaries", () => {

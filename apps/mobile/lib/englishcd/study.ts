@@ -1,3 +1,4 @@
+import { dictionaryWord } from "./word-cache";
 import {
   snapshotInText,
   utf8ByteLength,
@@ -21,7 +22,8 @@ export interface StudyInventory {
   inputs: string[];
   occurrences: Map<string, Occurrence>;
 }
-export type StudyWord = WordInfo & Occurrence;
+// Forms of one word family listed under the base form (the surfaces seen).
+export type StudyWord = WordInfo & Occurrence & { forms: string[] };
 
 // Adapted from EnglishCD extension study-inventory/shared study-words. This is a
 // complete local inventory, independent of the DOM highlighter's scan limits.
@@ -58,6 +60,16 @@ export function createInventory(document: ReadingDocument): StudyInventory {
   return { inputs: [...occurrences.keys()], occurrences };
 }
 
+// A word family: forms with a single base form in the dictionary's form table
+// share that base form's key and state (the server writes states there).
+export function familyKey(info: WordInfo) {
+  return info.lemmaCandidates?.length === 1
+    ? info.lemmaCandidates[0]
+    : info.termKey;
+}
+
+// Adapted from EnglishCD shared/study-words aggregateStudyWords: forms merge
+// under the base form; non-dictionary words (names, brands, typos) are skipped.
 export function mergeInventory(
   inventory: StudyInventory,
   infos: WordInfo[],
@@ -68,16 +80,35 @@ export function mergeInventory(
     const info = byInput.get(input);
     const occurrence = inventory.occurrences.get(input)!;
     if (!info) throw new Error("词汇查询结果不完整，请手动重试");
-    const previous = result.get(info.termKey);
-    if (previous) previous.count += occurrence.count;
-    else
-      result.set(info.termKey, {
+    if (!dictionaryWord(info)) continue;
+    const key = familyKey(info);
+    const previous = result.get(key);
+    if (previous) {
+      previous.count += occurrence.count;
+      if (!previous.forms.includes(info.termKey))
+        previous.forms.push(info.termKey);
+    } else
+      result.set(key, {
         ...info,
+        termKey: key,
         count: occurrence.count,
-        selection: { ...occurrence.selection, termKey: info.termKey },
+        selection: { ...occurrence.selection, termKey: key },
+        forms: [info.termKey],
       });
   }
   return [...result.values()];
+}
+
+// ignored (暂不学习, e.g. names) is neither mastered nor still to learn; the
+// personal vocabulary lists it, article counts leave it out.
+export function isUnmastered(state: WordState) {
+  return state === "unknown" || state === "learning";
+}
+
+export function studySummary(words: readonly WordInfo[]) {
+  const total = words.filter((word) => word.state !== "ignored").length;
+  const known = words.filter((word) => word.state === "known").length;
+  return { total, known, unmastered: total - known };
 }
 
 export function wordTags(word: WordInfo) {
@@ -101,7 +132,7 @@ export function filterWords(
     (word) =>
       (state === "all" ||
         (state === "unmastered"
-          ? word.state !== "known"
+          ? isUnmastered(word.state)
           : word.state === state)) &&
       (!tag || wordTags(word).includes(tag)) &&
       (!search || word.termKey.toLowerCase().includes(search)),
